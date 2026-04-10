@@ -28,13 +28,26 @@ Drops everything not needed for headless webcam → UE5 tracking.
 | `retinaface_640x640_opt.onnx` | RetinaFace detector (fallback) |
 | `priorbox_640x640.json`     | RetinaFace priors |
 
-## Python setup
+## Setup
+
+### Prerequisites
+- Python 3.7 or higher
+- Webcam
+- **Unreal Engine 5 with compatible plugin** to receive ARKit blendshape data via UDP
+
+### Install Python Dependencies
 
 ```bash
-pip install opencv-python-headless numpy onnxruntime
+pip install opencv-python numpy onnxruntime
 ```
 
-## Run
+### Optional: Install PyInstaller (for building standalone executable)
+
+```bash
+python -m pip install pyinstaller
+```
+
+## How to Run
 
 ```bash
 # Default: webcam 0, ARKit on 127.0.0.1:11574, OSF on 127.0.0.1:11573
@@ -49,6 +62,24 @@ python facetracker_lite.py -c 0 --arkit-ip 192.168.1.50 --arkit-port 11574
 # Faster model (less CPU):
 python facetracker_lite.py -c 0 --model 1
 ```
+
+## How to Build Standalone Executable
+
+To create a standalone `.exe` that doesn't require Python to be installed:
+
+```bash
+python -m PyInstaller osf_lite.spec
+```
+
+The built executable will be located in the `dist/` folder.
+
+## Unreal Engine 5 Integration
+
+**Important:** This tracker sends ARKit blendshape data via UDP. You need a **UE5 plugin or custom receiver component** to read and apply these values in Unreal Engine 5.
+
+### Using the Included C++ Component
+
+The included `ARKitFaceReceiver.h` and `ARKitFaceReceiver.cpp` files provide a ready-to-use UE5 component that receives the UDP data.
 
 ## UDP packets
 
