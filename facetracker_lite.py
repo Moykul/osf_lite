@@ -50,6 +50,8 @@ parser.add_argument("--arkit-ip",            default="127.0.0.1")
 parser.add_argument("--arkit-port",          type=int, default=11574)
 parser.add_argument("--arkit-only",          type=int, default=0)
 parser.add_argument("--no-arkit",            type=int, default=0)
+parser.add_argument("--recalibrate",          action="store_true",
+                    help="Force new calibration even if calibration.json exists")
 parser.add_argument("--vis",                 type=int, default=1,
                     help="Show visualiser window (1=on, 0=off)")
 if os.name == 'nt':
@@ -87,6 +89,7 @@ import struct
 from input_reader import InputReader, VideoReader, try_int
 from tracker import Tracker, get_model_base_path
 from arkit_remapper import ARKitRemapper, ARKitUDPSender
+from calibration import CalibrationData, CalibrationSession, CALIB_FILE
 from camera_picker import pick_camera
 from visualiser import Visualiser
 
@@ -106,7 +109,12 @@ OSF_FEATURES = [
 # ── Sockets and remapper ─────────────────────────────────────────────────────
 osf_sock   = None
 arkit_sender = None
-arkit_remap  = ARKitRemapper()
+# ── Load or run calibration ──────────────────────────────────────────────────
+_calib = CalibrationData()
+if not args.recalibrate:
+    _calib.load(CALIB_FILE)
+
+arkit_remap  = ARKitRemapper(_calib)
 vis          = Visualiser() if args.vis else None
 
 # auto-silent when visualiser is running
@@ -245,6 +253,7 @@ try:
         frame_count += 1
         now = time.time()
 
+        # ── Initialise tracker on first frame ───────────────────────────────
         if first:
             first = False
             height, width, _ = frame.shape
@@ -271,6 +280,38 @@ try:
             faces = tracker.predict(frame)
         except Exception:
             traceback.print_exc()
+            continue
+
+        # ── Run calibration if needed ────────────────────────────────────────
+        if not _calib.calibrated:
+            if not hasattr(arkit_remap, '_calib_session'):
+                arkit_remap._calib_session = CalibrationSession()
+                print("\n[Calib] Starting — follow on-screen instructions.")
+            sess = arkit_remap._calib_session
+            if vis is not None:
+                vis.show_calibration(frame, sess)
+            elif args.silent != 1:
+                print(f"\r[Calib] Pose {sess.pose_index+1}/{sess.pose_count} "
+                      f"{sess.pose_name} {sess.phase} {sess.progress*100:.0f}%", end="")
+            try:
+                if faces:
+                    f0 = faces[0]
+                    if f0.current_features is None:
+                        f0.current_features = {}
+                    es = f0.eye_state if f0.eye_state is not None else [
+                        [1.0,0.0,0.0,0.0],[1.0,0.0,0.0,0.0]]
+                    sess.feed(f0.current_features, es)
+            except Exception:
+                pass
+            if sess.complete:
+                _calib = sess.build()
+                _calib.save()
+                arkit_remap.set_calibration(_calib)
+                del arkit_remap._calib_session
+                print("\n[Calib] Complete! Tracking starting...")
+            if vis is not None and cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+            frame_time = time.perf_counter()
             continue
 
         detected = False
