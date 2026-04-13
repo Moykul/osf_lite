@@ -66,6 +66,35 @@ class Visualiser:
         self._th = self.CH + self.HDR + self.FTR
         self._cv = np.zeros((self._th, self._tw, 3), dtype=np.uint8)
         cv2.namedWindow(self.WIN, cv2.WINDOW_AUTOSIZE)
+        
+        # Load logo if available
+        self._logo = None
+        try:
+            import os
+            
+            # Try multiple logo file names (JPG first since OpenCV handles it natively)
+            logo_files = ["asset/roflStamp.jpg", "asset/oscROLF.ico", "oscROLF.ico"]
+            logo_path = None
+            
+            for filename in logo_files:
+                path = os.path.join(os.path.dirname(__file__), filename)
+                if os.path.exists(path):
+                    logo_path = path
+                    break
+            
+            if logo_path:
+                # Load with OpenCV
+                logo = cv2.imread(logo_path, cv2.IMREAD_UNCHANGED)
+                if logo is not None:
+                    # Resize to fit footer
+                    h, w = logo.shape[:2]
+                    target_h = 20
+                    aspect = w / h
+                    target_w = int(target_h * aspect)
+                    self._logo = cv2.resize(logo, (target_w, target_h), interpolation=cv2.INTER_AREA)
+        except Exception as e:
+            # Silently fail if logo can't be loaded
+            pass
 
     def update(self, frame, face, shapes, fps):
         c = self._cv
@@ -92,7 +121,7 @@ class Visualiser:
             c[oy:oy+nh, ox:ox+nw] = cv2.resize(frame, (nw, nh))
             dark = c[oy:oy+nh, ox:ox+nw].copy()
             cv2.rectangle(dark, (0, 0), (nw, nh), (0, 0, 0), -1)
-            cv2.addWeighted(dark, 0.45, c[oy:oy+nh, ox:ox+nw], 0.55, 0, c[oy:oy+nh, ox:ox+nw])
+            cv2.addWeighted(dark, 0.2, c[oy:oy+nh, ox:ox+nw], 0.8, 0, c[oy:oy+nh, ox:ox+nw])
 
         # header bar
         cv2.rectangle(c, (0, 0), (self._tw, self.HDR), PANEL, -1)
@@ -107,12 +136,15 @@ class Visualiser:
         # instruction
         cv2.putText(c, session.instruction, (30, py + 80), F, 0.5, TEXT, 1, cv2.LINE_AA)
 
-        # phase status
+        # phase status + prompt
         sy = py + 120
-        if session.phase == "settle":
-            cv2.putText(c, "Get ready...", (30, sy), F, 0.65, DIM, 1, cv2.LINE_AA)
+        if session.phase == "waiting":
+            import time as _t
+            pulse = int(_t.time() * 2) % 2 == 0
+            col = ACCENT if pulse else DIM
+            cv2.putText(c, "Press SPACE when ready", (30, sy), F, 0.7, col, 1, cv2.LINE_AA)
         else:
-            cv2.putText(c, "RECORDING", (30, sy), F, 0.7, GREEN, 2, cv2.LINE_AA)
+            cv2.putText(c, "RECORDING...", (30, sy), F, 0.7, GREEN, 2, cv2.LINE_AA)
 
         # progress bar
         bx1, bx2 = 30, self.CW - 30
@@ -120,8 +152,7 @@ class Visualiser:
         cv2.rectangle(c, (bx1, by), (bx2, by + 16), GRID, -1)
         fill = int((bx2 - bx1) * session.progress)
         if fill > 0:
-            col = GREEN if session.phase == "record" else (80, 80, 80)
-            cv2.rectangle(c, (bx1, by), (bx1 + fill, by + 16), col, -1)
+            cv2.rectangle(c, (bx1, by), (bx1 + fill, by + 16), GREEN, -1)
 
         # right panel hint
         rx = self.CW + 20
@@ -147,6 +178,7 @@ class Visualiser:
         cv2.putText(c, "tracking" if tracking else "searching",
                     (212, 24), F, 0.45, DIM, 1, cv2.LINE_AA)
         cv2.putText(c, "ARKit Shapes", (self.CW + self.BL, 24), F, 0.5, DIM, 1, cv2.LINE_AA)
+
 
     def _cam(self, c, frame, face):
         oy = self.HDR
@@ -200,4 +232,27 @@ class Visualiser:
     def _footer(self, c):
         fy = self._th - self.FTR
         cv2.rectangle(c, (0, fy), (self._tw, self._th), PANEL, -1)
-        cv2.putText(c, "Q  quit    |  ROFL Production", (12, fy + 18), F, 0.38, DIM, 1, cv2.LINE_AA)
+        
+        # Draw text
+        text = "Q  quit    | A ROFL Production"
+        cv2.putText(c, text, (12, fy + 18), F, 0.38, DIM, 1, cv2.LINE_AA)
+        
+        # Draw logo if available - positioned just to the right of the text
+        if self._logo is not None:
+            lh, lw = self._logo.shape[:2]
+            text_width = cv2.getTextSize(text, F, 0.38, 1)[0][0]
+            logo_x = 12 + text_width + 8  # 8px gap after text
+            logo_y = fy + 4
+            
+            # Handle RGBA or RGB
+            if self._logo.shape[2] == 4:
+                # Has alpha channel
+                alpha = self._logo[:, :, 3] / 255.0
+                for ch in range(3):
+                    c[logo_y:logo_y+lh, logo_x:logo_x+lw, ch] = (
+                        alpha * self._logo[:, :, ch] +
+                        (1 - alpha) * c[logo_y:logo_y+lh, logo_x:logo_x+lw, ch]
+                    )
+            else:
+                # No alpha, direct copy
+                c[logo_y:logo_y+lh, logo_x:logo_x+lw] = self._logo

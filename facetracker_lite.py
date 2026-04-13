@@ -309,7 +309,10 @@ try:
                 arkit_remap.set_calibration(_calib)
                 del arkit_remap._calib_session
                 print("\n[Calib] Complete! Tracking starting...")
-            if vis is not None and cv2.waitKey(1) & 0xFF == ord('q'):
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord(' ') or key == 13:
+                sess.confirm()
+            elif key == ord('q') or key == 27:
                 break
             frame_time = time.perf_counter()
             continue

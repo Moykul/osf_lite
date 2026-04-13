@@ -170,10 +170,12 @@ class CalibrationSession:
         for k in ALL_FEATURES:
             n  = neutral.get(k, 0.0)
             cal.neutral[k] = n
-            hi = maxpose["max"].get(k, n) - n
-            lo = maxpose["min"].get(k, n) - n
-            if abs(hi) < MIN: hi =  (FALLBACK[k][1] - FALLBACK[k][0]) * 0.5
-            if abs(lo) < MIN: lo = -(FALLBACK[k][1] - FALLBACK[k][0]) * 0.5
+            raw_hi = maxpose["max"].get(k, n) - n
+            raw_lo = maxpose["min"].get(k, n) - n
+            # hi must be positive (max excursion above neutral)
+            hi = raw_hi if raw_hi > MIN else (FALLBACK[k][1] - FALLBACK[k][0]) * 0.5
+            # lo must be negative (max excursion below neutral)
+            lo = raw_lo if raw_lo < -MIN else -((FALLBACK[k][1] - FALLBACK[k][0]) * 0.5)
             cal.range_hi[k] = hi
             cal.range_lo[k] = lo
         cal.neutral["eye_l"] = blink["mean"].get("eye_l", cal.neutral["eye_l"])
